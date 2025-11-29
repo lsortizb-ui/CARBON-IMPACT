@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Maqueta Ambiental – Versión Combinada</title>
+
+<style>
+  body{
+    margin:0;
+    overflow:hidden;
+    background:#1a1a1a;
+    font-family:Arial, sans-serif;
+    color:white;
+  }
+
+  /* BOTONES */
+  #ui{
+    position:absolute;
+    left:10px;
+    top:10px;
+    width:180px;
+    padding:10px;
+    background:rgba(0,0,0,0.55);
+    border-radius:10px;
+  }
+  button{
+    width:100%;
+    margin:5px 0;
+    padding:7px;
+    border:none;
+    border-radius:6px;
+    background:#3b82f6;
+    color:white;
+    cursor:pointer;
+    font-size:14px;
+  }
+  button:hover{
+    background:#2563eb;
+  }
+
+  /* INDICADORES EN LA PARTE SUPERIOR */
+  #topIndicators{
+    position:absolute;
+    top:10px;
+    left:210px;
+    right:10px;
+    background:rgba(0,0,0,0.85);
+    padding:10px;
+    border-radius:10px;
+    display:grid;
+    grid-template-columns:repeat(4, 1fr);
+    gap:8px;
+    text-align:center;
+    font-size:13px;
+  }
+
+  .indCard{
+    background:rgba(255,255,255,0.06);
+    padding:6px;
+    border-radius:8px;
+  }
+  .value{
+    font-size:18px;
+    font-weight:bold;
+  }
+
+  /* COLORES DE CADA MOLÉCULA */
+  .co2 { color:#ff4d4d; }
+  .o2  { color:#66ccff; }
+  .o3  { color:#b266ff; }
+  .so2 { color:#ffe24d; }
+  .nox { color:#9fff66; }
+  .h2so4{ color:#ffbb55; }
+  .temp{ color:#ffa64d; }
+
+</style>
+</head>
+
+<body>
+
+<div id="ui">
+  <button onclick="toggleFactory()">🏭 Fábrica</button>
+  <button onclick="toggleCars()">🚗 Autos</button>
+  <button onclick="toggleAcidRain()">☔ Lluvia Ácida</button>
+  <button onclick="toggleDay()">🌞 Día / 🌙 Noche</button>
+  <button onclick="addTree()">🌱 Reforestación</button>
+  <button onclick="resetScene()">♻ Reset</button>
+</div>
+
+<div id="topIndicators">
+<br>INDICADORES<br>AMBIENTALES
+  <div class="indCard co2">
+    CO₂ (ppm)
+    <div id="co2val" class="value">420</div>
+  </div>
+
+  <div class="indCard o2">
+    O₂ (%)
+    <div id="o2val" class="value">20.8</div>
+  </div>
+
+  <div class="indCard o3">
+    O₃ (ppm)
+    <div id="o3val" class="value">0.030</div>
+  </div>
+
+  <div class="indCard temp">
+    Temp (°C)
+    <div id="tempval" class="value">15.0</div>
+  </div>
+
+  <div class="indCard so2">
+    SO₂ (ppm)
+    <div id="so2val" class="value">0.0007</div>
+  </div>
+
+  <div class="indCard nox">
+    NOₓ (ppm)
+    <div id="noxval" class="value">0.018</div>
+  </div>
+
+  <div class="indCard h2so4">
+    H₂SO₄ (ppm)
+    <div id="h2so4val" class="value">0.0000</div>
+  </div>
+
+</div>
+
+<canvas id="canvas"></canvas>
+
+<script>
+/****************************************************
+VARIABLES PRINCIPALES
+*****************************************************/
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+canvas.width = innerWidth;
+canvas.height = innerHeight;
+
+let day = true;
+let factoryOn = false;
+let carsOn = false;
+let acidRainOn = false;
+
+/* Indicadores */
+let CO2_ppm = 420;
+let O2_pct = 20.8;
+let O3_ppm = 0.030;
+let SO2_ppm = 0.0007;
+let NOx_ppm = 0.018;
+let H2SO4_ppm = 0.0000;
+let temperature = 15;
+
+/* Arrays */
+let gases = [];  
+let drops = [];  
+let cars = [
+  { x:100, y:canvas.height-120, speed:80 },
+  { x:350, y:canvas.height-120, speed:60 }
+];
+let trees = [
+  { x:canvas.width-250, y:canvas.height-200 }
+];
+
+/****************************************************
+CLASE GENERAL DE PARTÍCULAS
+*****************************************************/
+class GasParticle{
+  constructor(x,y,label,color,vy,size){
+    this.x=x;
+    this.y=y;
+    this.label=label;
+    this.color=color;
+    this.vy=vy;
+    this.alpha=1;
+    this.size=size;
+  }
+  update(dt){
+    this.y += this.vy * dt;
+    this.alpha -= 0.12 * dt;
+  }
+  draw(){
+    ctx.globalAlpha = this.alpha;
+    ctx.fillStyle = this.color;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI*2);
+    ctx.fill();
+
+    ctx.globalAlpha = this.alpha;
+    ctx.fillStyle="white";
+    ctx.font="11px Arial";
+    ctx.fillText(this.label, this.x-12, this.y-10);
+
+    ctx.globalAlpha = 1;
+  }
+}
+
+/****************************************************
+SPAWN DE PARTÍCULAS
+*****************************************************/
+function spawnFactory(){
+  if(!factoryOn) return;
+  let baseX = 260;
+  let baseY = canvas.height-350;
+
+  gases.push(new GasParticle(baseX+(Math.random()*80 - 20), baseY- (Math.random() * 3000), "CO₂", "rgba(255,77,77,0.35)", -50, 3));
+  gases.push(new GasParticle(baseX+(Math.random()*90 - 20), baseY- (Math.random() * 3000), "SO₂", "rgba(255,235,59,0.35)", -50, 5));
+  gases.push(new GasParticle(baseX+(Math.random()*100 - 50), baseY- (Math.random() * 3000), "NOₓ", "rgba(153,255,102,0.35)", -50, 7));
+
+  CO2_ppm += 0.004;
+  SO2_ppm += 0.0003;
+  NOx_ppm += 0.0003;
+  temperature += 0.0002;
+}
+
+function spawnTrees(){
+  if(!day) return;
+
+  trees.forEach(t=>{
+    gases.push(new GasParticle(
+      t.x + (Math.random()*30 - 15),
+      t.y,
+      "O₂",
+      "rgba(102,204,255,0.35)",
+      -40,
+      10
+    ));
+  });
+
+  O2_pct += 0.001;
+  CO2_ppm -= 0.006;
+}
+
+function spawnCarCO2(){
+  if(!carsOn) return;
+
+  cars.forEach(c=>{
+    gases.push(new GasParticle(
+      c.x+20, 
+      c.y - (Math.random() * 3000), 
+      "CO₂",
+      "rgba(255,77,77,0.35)", 
+      -50, 
+      3
+    ));
+  });
+
+  CO2_ppm += 0.0009;
+}
+
+function spawnAcidRain(){
+  if(!acidRainOn) return;
+
+  for(let i=0;i<3;i++){
+    drops.push({
+      x:Math.random()*canvas.width,
+      y:0,
+      vy:20 + Math.random()*120
+    });
+  }
+
+  if(Math.random()<0.04){
+    let type = ["SO₂","NOₓ"][Math.floor(Math.random()*2)];
+    gases.push(new GasParticle(
+      Math.random()*canvas.width,
+      0,
+      type,
+      type==="SO₂" ? "yellow" : "lime",
+      40,
+      5
+    ));
+
+    if(type==="SO₂") SO2_ppm+=0.0003;
+    if(type==="NOₓ") NOx_ppm+=0.0003;
+  }
+
+  if(SO2_ppm>0.0005 && NOx_ppm>0.01){
+    gases.push(new GasParticle(
+      Math.random()*canvas.width,
+      0,
+      "H₂SO₄",
+      "orange",
+      45,
+      5
+    ));
+    H2SO4_ppm += 0.0004;
+    SO2_ppm -= 0.0002;
+    NOx_ppm -= 0.0001;
+  }
+}
+
+/****************************************************
+ACTUALIZAR PARTÍCULAS
+*****************************************************/
+function updateParticles(dt){
+  gases.forEach(g=>g.update(dt));
+  gases = gases.filter(g=>g.alpha>0);
+
+  drops.forEach(d=> d.y += d.vy * dt);
+  drops = drops.filter(d=> d.y < canvas.height);
+}
+
+/****************************************************
+DIBUJO
+*****************************************************/
+function drawBackground(){
+  ctx.fillStyle = day ? "#87ceeb" : "#021526";
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+}
+
+function drawGround(){
+  ctx.fillStyle="#3a7d44";
+  ctx.fillRect(0, canvas.height-160, canvas.width,160);
+}
+
+function drawCity(){
+  ctx.fillStyle="#67727e";
+  ctx.fillRect(60,canvas.height-290,80,200);
+  ctx.fillRect(140,canvas.height-290,60,180);
+  ctx.fillRect(20,canvas.height-320,50,240);
+}
+
+function drawFactory(){
+  ctx.fillStyle="#666";
+  ctx.fillRect(200,canvas.height-250,160,140);
+
+  ctx.fillStyle="#333";
+  ctx.fillRect(240,canvas.height-350,60,100);
+  ctx.fillRect(20,canvas.height-210,340,20);
+}
+
+function drawTrees(){
+  trees.forEach(t=>{
+    ctx.fillStyle="#8b5a2b";
+    ctx.fillRect(t.x-10, t.y+20,20,60);
+
+    ctx.fillStyle="#2f8b3a";
+    ctx.beginPath();
+    ctx.arc(t.x,t.y,40,0,Math.PI*2);
+    ctx.fill();
+  });
+}
+
+function drawRoad(){
+  ctx.fillStyle="#222";
+  ctx.fillRect(0,canvas.height-130, canvas.width,60);
+}
+
+function drawCars(dt){
+  cars.forEach(c=>{
+    c.x += c.speed*dt;
+    if(c.x > canvas.width+80) c.x = -100;
+
+    ctx.fillStyle="#EEE";
+    ctx.fillRect(c.x,c.y,70,20);
+
+    ctx.fillStyle="#47B4FC";
+    ctx.fillRect(c.x,c.y,50,-20);
+
+    ctx.fillStyle="#000";
+    ctx.beginPath(); ctx.arc(c.x+10,c.y+20,10,0,6.28); ctx.fill();
+    ctx.beginPath(); ctx.arc(c.x+50,c.y+20,10,0,6.28); ctx.fill();
+
+    ctx.fillStyle="#FFF";
+    ctx.beginPath(); ctx.arc(c.x+10,c.y+20,5,0,6.28); ctx.fill();
+    ctx.beginPath(); ctx.arc(c.x+50,c.y+20,5,0,6.28); ctx.fill();
+  });
+}
+
+function drawParticles(){
+  gases.forEach(g=>g.draw());
+
+  drops.forEach(r=>{
+    ctx.fillStyle="rgba(47,179,245,0.5)";
+    ctx.fillRect(r.x,r.y,3,10);
+  });
+}
+
+/****************************************************
+INDICADORES
+*****************************************************/
+function updateIndicators(){
+  co2val.textContent   = CO2_ppm.toFixed(1);
+  o2val.textContent    = O2_pct.toFixed(3);
+  o3val.textContent    = O3_ppm.toFixed(3);
+  so2val.textContent   = SO2_ppm.toFixed(4);
+  noxval.textContent   = NOx_ppm.toFixed(4);
+  h2so4val.textContent = H2SO4_ppm.toFixed(4);
+  tempval.textContent  = temperature.toFixed(2);
+}
+
+/****************************************************
+LOOP PRINCIPAL
+*****************************************************/
+let lastTime = 0;
+function loop(time){
+  const dt = (time - lastTime) / 1000;
+  lastTime = time;
+
+  requestAnimationFrame(loop);
+
+  drawBackground();
+  drawGround();
+  drawCity();
+  drawFactory();
+  drawTrees();
+  drawRoad();
+
+  spawnFactory();
+  spawnCarCO2();
+  if(Math.random()<0.03) spawnTrees();
+  spawnAcidRain();
+
+  updateParticles(dt);
+  drawParticles();
+  drawCars(dt);
+
+  updateIndicators();
+}
+requestAnimationFrame(loop);
+
+/****************************************************
+BOTONES
+*****************************************************/
+function toggleFactory(){ factoryOn = !factoryOn; }
+function toggleCars(){ carsOn = !carsOn; }
+function toggleAcidRain(){ acidRainOn = !acidRainOn; }
+function toggleDay(){ day = !day; }
+
+function addTree(){
+  trees.push({ x: canvas.width-250 + (Math.random()*100-50), y:canvas.height-200 });
+}
+
+function resetScene(){
+  gases=[]; drops=[];
+  CO2_ppm=420; O2_pct=20.8; O3_ppm=0.030;
+  SO2_ppm=0.0007; NOx_ppm=0.018; H2SO4_ppm=0;
+  temperature=15;
+}
+
+</script>
+
+</body>
+</html>
